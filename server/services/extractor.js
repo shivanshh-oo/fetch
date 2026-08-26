@@ -157,8 +157,9 @@ export async function resolveWithYtdlp(url) {
       audioQualities: ['320 kbps', '192 kbps', '128 kbps']
     };
   } catch (err) {
-    console.error('[yt-dlp] Failed:', err.message?.substring(0, 200));
-    return { success: false, error: err.message };
+    const actualError = err.stderr ? err.stderr.trim() : err.message;
+    console.error('[yt-dlp] Failed:', actualError.substring(0, 300));
+    return { success: false, error: actualError };
   }
 }
 
@@ -186,7 +187,7 @@ export async function resolveMedia(url) {
   throw new Error(
     result.error?.includes('Private video') ? 'This video is private or restricted.' :
     result.error?.includes('not available') ? 'This video is not available in your region or has been deleted.' :
-    result.error?.includes('age') ? 'Age-restricted content requires sign-in — not supported.' :
-    `Could not extract media: ${result.error?.substring(0, 100) || 'Unknown error'}`
+    result.error?.includes('age') ? 'Age-restricted content requires sign-in.' :
+    `Could not extract media: ${result.error?.split('\n')[0]?.substring(0, 150) || 'Unknown error'}`
   );
 }
