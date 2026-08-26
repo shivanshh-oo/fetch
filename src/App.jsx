@@ -34,7 +34,7 @@ export default function App() {
     <>
       <div className="bg-dots"></div>
 
-      {}
+
       <nav>
         <a className="nav-logo" onClick={handleGoHome}>
           FETC<span>H</span>
@@ -53,7 +53,7 @@ export default function App() {
         </div>
       </nav>
 
-      {}
+
       {currentPage === 'landing' ? (
         <LandingPage onResolveSuccess={handleResolveSuccess} />
       ) : (
@@ -65,7 +65,7 @@ export default function App() {
         />
       )}
 
-      {}
+
       <Toast show={toast.show} message={toast.message} />
     </>
   );

@@ -45,18 +45,18 @@ export function detectPlatform(url) {
       return { supported: true, platform: plat.key, label: plat.name, cls: plat.cls, icon: plat.icon };
     }
   }
-  // Accept any http URL as a best-effort attempt
+
   if (/^https?:\/\//i.test(trimmed)) {
     return { supported: true, platform: 'general', label: 'Video Link', cls: 'yt', icon: 'fas fa-globe' };
   }
   return { supported: false, error: 'Unsupported platform. Paste a YouTube, Instagram, TikTok, Facebook, or X link.' };
 }
 
-// ─── Helpers ───────────────────────────────────────────────────────────────
+
 function formatDuration(seconds) {
   if (!seconds || isNaN(seconds)) return '00:00';
   let s = Math.round(Number(seconds));
-  if (s > 86400) s = Math.round(s / 1000); // handle milliseconds
+  if (s > 86400) s = Math.round(s / 1000);
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   const p = n => String(n).padStart(2, '0');
   return h > 0 ? `${h}:${p(m)}:${p(sec)}` : `${p(m)}:${p(sec)}`;
@@ -68,12 +68,12 @@ function formatSize(bytes) {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
 }
 
-// ─── yt-dlp Resolution ────────────────────────────────────────────────────
+
 export async function resolveWithYtdlp(url) {
   try {
     console.log(`[yt-dlp] Resolving: ${url}`);
 
-    // Use Python to run yt-dlp so it finds the right interpreter
+
     const { stdout, stderr } = await execAsync(
       `yt-dlp --dump-json --no-playlist --skip-download --no-warnings "${url.replace(/"/g, '')}"`,
       { timeout: 20000, maxBuffer: 10 * 1024 * 1024 }
@@ -86,13 +86,13 @@ export async function resolveWithYtdlp(url) {
     const duration = formatDuration(info.duration);
     const thumbnail = info.thumbnail || '';
 
-    // ── Build video format options ──────────────────────────────────────
+
     const WANTED_HEIGHTS = [2160, 1440, 1080, 720, 480, 360, 240];
     const seen = new Set();
     const videos = [];
 
     if (info.formats) {
-      // Sort by height descending
+
       const sorted = [...info.formats].sort((a, b) => (b.height || 0) - (a.height || 0));
 
       for (const f of sorted) {

@@ -15,7 +15,7 @@ export default function LandingPage({ onResolveSuccess }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  // Real-time client side detection
+
   useEffect(() => {
     setErrorMsg('');
     const trimmed = url.trim();
@@ -49,7 +49,7 @@ export default function LandingPage({ onResolveSuccess }) {
     setProgress(15);
 
     try {
-      // 1. Submit resolution job to backend API
+
       const res = await fetch('/api/v1/resolve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -112,7 +112,7 @@ export default function LandingPage({ onResolveSuccess }) {
       </div>
 
       <div className="input-section">
-        {}
+
         <div className="support-static">
           <div className="sf-title">Supported Everywhere</div>
           <div className="sf-platforms">

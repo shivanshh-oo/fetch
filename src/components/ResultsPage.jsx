@@ -17,10 +17,6 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
   const fallbackThumb = `https://picsum.photos/seed/${encodeURIComponent(title || jobId || 'fetch')}/800/450`;
   const sourceUrl = mediaData?._sourceUrl || '';
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-  // Uses a hidden iframe to trigger the download. This is highly reliable on
-  // Android and avoids mobile popup blockers that often block target="_blank".
-  // It also prevents the main window from navigating away, keeping the React app alive.
   const triggerDownload = (href) => {
     const iframe = document.createElement('iframe');
     iframe.style.display = 'none';
@@ -61,11 +57,11 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
     setDlState(s => ({ ...s, audio: true }));
 
     if (nativeAudio?.url) {
-      // Platform already provides a native audio stream URL — use it directly
+
       onTriggerToast(`Downloading ${nativeAudio.extension?.toUpperCase() || 'MP3'} audio…`);
       triggerDownload(nativeAudio.url);
     } else if (sourceUrl) {
-      // Extract audio server-side with yt-dlp -x --audio-format mp3
+
       onTriggerToast('Extracting audio — check notifications shortly…');
       const href = `/api/v1/download/file?url=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(safeName)}&audio=1`;
       triggerDownload(href);
@@ -79,7 +75,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
   return (
     <main className="page page-results" id="pageResults">
 
-      {}
+
       <div className="results-topbar">
         <button className="back-btn" onClick={onBack}>
           <i className="fas fa-arrow-left"></i> New download
@@ -90,7 +86,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
         </div>
       </div>
 
-      {}
+
       <div className="preview-card">
         <div className="card-label">Video Preview</div>
         <div className="preview-image">
@@ -122,10 +118,10 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
         </div>
       </div>
 
-      {}
+
       <div className="download-row">
 
-        {}
+
         <div className="dl-card">
           <div className="card-label yellow">Download Video</div>
 
@@ -151,7 +147,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
             </p>
           )}
 
-          {}
+
           {dlState.video && (
             <div style={{ padding: '8px 0', fontSize: '0.72rem', color: '#6B6560', display: 'flex', alignItems: 'center', gap: 6 }}>
               <div className="btn-spinner" style={{ display: 'block', border: '2.5px solid #DED2BD', borderTopColor: '#1A1A1A', width: 14, height: 14, borderRadius: '50%', animation: 'spin 0.7s linear infinite' }}></div>
@@ -171,7 +167,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
           </button>
         </div>
 
-        {}
+
         <div className="dl-card">
           <div className="card-label pink">Download Audio</div>
 

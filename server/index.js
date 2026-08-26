@@ -21,10 +21,10 @@ app.use(express.static(distPath));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.sendFile(path.join(distPath, 'index.html'), (err) => {
-    if (err) res.status(200).send('FETCH API running on http://localhost:5000 — frontend on http://localhost:3000');
+    if (err) res.status(200).send('FETCH API running on http://localhost:5000');
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`⚡ FETCH Backend API listening on http://localhost:${PORT}`);
+  console.log(`FETCH Backend API listening on http://localhost:${PORT}`);
 });
