@@ -34,7 +34,10 @@ router.post('/jobs/:jobId/audio', (req, res) => {
   catch (err) { res.status(400).json({ error: err.message }); }
 });
 
-const FFMPEG_PATH = 'C:\\Users\\Prompt\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.1-full_build\\bin\\ffmpeg.exe';
+const IS_WINDOWS = os.platform() === 'win32';
+const FFMPEG_PATH = IS_WINDOWS 
+  ? 'C:\\Users\\Prompt\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.1-full_build\\bin\\ffmpeg.exe'
+  : 'ffmpeg'; // On Linux/Docker, ffmpeg is installed in the global PATH
 
 router.get('/download/file', async (req, res) => {
   const { url, title = 'FETCH_video', audio = '0', height = '0' } = req.query;
@@ -48,16 +51,16 @@ router.get('/download/file', async (req, res) => {
   const isAudio = audio === '1';
   const maxHeight = parseInt(height, 10) || 0;
 
+  const ffmpegArg = IS_WINDOWS ? `--ffmpeg-location "${FFMPEG_PATH}" ` : '';
+
   let cmd;
   if (isAudio) {
     const outAudio = path.join(tmpDir, 'output.mp3');
-    cmd = `yt-dlp --ffmpeg-location "${FFMPEG_PATH}" -x --audio-format mp3 --audio-quality 0 --no-playlist --no-warnings -o "${outAudio}" "${decodedUrl}"`;
+    cmd = `yt-dlp ${ffmpegArg}-x --audio-format mp3 --audio-quality 0 --no-playlist --no-warnings -o "${outAudio}" "${decodedUrl}"`;
   } else if (maxHeight > 0) {
-    
-    cmd = `yt-dlp --ffmpeg-location "${FFMPEG_PATH}" -f "bestvideo[height<=${maxHeight}]+bestaudio/bv*[height<=${maxHeight}]+ba/best" --merge-output-format mp4 --no-playlist --no-warnings -o "${outFile}" "${decodedUrl}"`;
+    cmd = `yt-dlp ${ffmpegArg}-f "bestvideo[height<=${maxHeight}]+bestaudio/bv*[height<=${maxHeight}]+ba/best" --merge-output-format mp4 --no-playlist --no-warnings -o "${outFile}" "${decodedUrl}"`;
   } else {
-    
-    cmd = `yt-dlp --ffmpeg-location "${FFMPEG_PATH}" -f "bestvideo+bestaudio/bv*+ba/best" --merge-output-format mp4 --no-playlist --no-warnings -o "${outFile}" "${decodedUrl}"`;
+    cmd = `yt-dlp ${ffmpegArg}-f "bestvideo+bestaudio/bv*+ba/best" --merge-output-format mp4 --no-playlist --no-warnings -o "${outFile}" "${decodedUrl}"`;
   }
 
   try {
