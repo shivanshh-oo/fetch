@@ -1,58 +1,105 @@
 /**
- * Cobalt.tools API integration
- * Used specifically for YouTube to get pre-merged video+audio download URLs.
- * Cobalt is a free, open-source tool: https://cobalt.tools
+ * Cobalt.tools API integration for YouTube downloads (merged video+audio)
+ *
+ * Auth: Cobalt's official API (api.cobalt.tools) now requires an API key.
+ * Get a free key at: https://cobalt.tools  (Settings → API Key)
+ * Set it in .env as: COBALT_API_KEY=your_key_here
+ *
+ * Fallback: If no key is set, we try public community cobalt instances.
  */
 
-const COBALT_API = 'https://api.cobalt.tools/';
+// Official API — requires COBALT_API_KEY
+const COBALT_OFFICIAL = 'https://api.cobalt.tools/';
+
+// Public community instances (no auth needed, but may be slower/less reliable)
+// Source: https://instances.cobalt.best
+const COBALT_PUBLIC_INSTANCES = [
+  'https://co.wuk.sh/',
+  'https://cobalt.urdailyinfo.link/',
+  'https://cobalt.api.timelessnesses.me/',
+  'https://cobalt.flick.tech/',
+];
 
 /**
- * Call Cobalt API and return a merged download URL for a YouTube video.
- * @param {string} url         - Original YouTube URL
- * @param {string} quality     - e.g. "1080", "720", "480", "360"
- * @param {boolean} audioOnly  - true to get audio-only mp3
+ * Make one attempt to the given cobalt instance URL.
+ * Returns the download URL string or throws.
  */
-export async function getCobaltDownloadUrl(url, quality = '720', audioOnly = false) {
-  console.log(`[Cobalt] Requesting ${audioOnly ? 'audio' : `${quality}p video`} for: ${url}`);
+async function tryCobaltInstance(instanceUrl, youtubeUrl, quality, audioOnly) {
+  const apiKey = process.env.COBALT_API_KEY;
+
+  const headers = {
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',
+  };
+
+  // Add auth header only if we have a key
+  if (apiKey) {
+    headers['Authorization'] = `Api-Key ${apiKey}`;
+  }
 
   const body = {
-    url,
+    url: youtubeUrl,
     downloadMode: audioOnly ? 'audio' : 'auto',
     videoQuality: quality,
     audioFormat: 'mp3',
     filenameStyle: 'basic',
   };
 
-  const response = await fetch(COBALT_API, {
+  const response = await fetch(instanceUrl, {
     method: 'POST',
-    headers: {
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10000), // 10s per instance
   });
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`Cobalt API HTTP ${response.status}: ${text.substring(0, 150)}`);
-  }
-
   const data = await response.json();
-  console.log(`[Cobalt] Response status: ${data.status}`);
 
-  if (data.status === 'error') {
-    throw new Error(`Cobalt error: ${data.error?.code || JSON.stringify(data.error)}`);
+  if (!response.ok || data.status === 'error') {
+    const code = data.error?.code || `HTTP ${response.status}`;
+    throw new Error(code);
   }
 
-  // status: "tunnel" | "redirect" — both have a usable .url
   if (data.status === 'tunnel' || data.status === 'redirect') {
     return data.url;
   }
 
-  // status: "picker" — multiple streams; pick the first one
   if (data.status === 'picker' && Array.isArray(data.picker)) {
-    return data.picker[0]?.url || null;
+    const best = data.picker[0]?.url;
+    if (best) return best;
   }
 
-  throw new Error(`Unexpected Cobalt response status: ${data.status}`);
+  throw new Error(`Unexpected status: ${data.status}`);
+}
+
+/**
+ * Get a merged YouTube download URL from Cobalt.
+ * Tries the official API first (if COBALT_API_KEY is set), then public instances.
+ *
+ * @param {string} url         - Original YouTube URL
+ * @param {string} quality     - "1080", "720", "480", "360"
+ * @param {boolean} audioOnly  - true for mp3 download
+ */
+export async function getCobaltDownloadUrl(url, quality = '720', audioOnly = false) {
+  const apiKey = process.env.COBALT_API_KEY;
+
+  // Build the list of instances to try
+  const instancesToTry = apiKey
+    ? [COBALT_OFFICIAL, ...COBALT_PUBLIC_INSTANCES]   // official first if we have a key
+    : COBALT_PUBLIC_INSTANCES;                         // public only if no key
+
+  let lastError = null;
+
+  for (const instance of instancesToTry) {
+    try {
+      console.log(`[Cobalt] Trying ${instance} for ${audioOnly ? 'audio' : quality + 'p video'}...`);
+      const dlUrl = await tryCobaltInstance(instance, url, quality, audioOnly);
+      console.log(`[Cobalt] ✅ Got URL from ${instance}`);
+      return dlUrl;
+    } catch (err) {
+      console.warn(`[Cobalt] ❌ ${instance} failed: ${err.message}`);
+      lastError = err;
+    }
+  }
+
+  throw new Error(`All Cobalt instances failed. Last error: ${lastError?.message}`);
 }
