@@ -15,7 +15,7 @@ An all-in-one web application to download video and audio from popular social me
 ## Setup & Installation
 
 ### 1. Get an API Key
-1. Go to [RapidAPI - Social Download All in One](https://rapidapi.com/social-download-all-in-one) and subscribe to the free tier.
+1. Go to [RapidAPI - Social Download All in One](https://rapidapi.com/nguyenmanhict-MuTUtGWD7K/api/social-download-all-in-one/) and subscribe to the free tier.
 2. Copy your `X-RapidAPI-Key`.
 
 ### 2. Local Setup
@@ -37,17 +37,6 @@ npm run dev
 
 The frontend will run on `http://localhost:3000` and the backend API will run on `http://localhost:5000`.
 
-## Deployment (Render.com)
-
-This app is fully containerized and optimized for **Render's Free Tier**.
-
-1. Create a new **Web Service** on Render.
-2. Connect your GitHub repository.
-3. Select **Docker** as the Runtime environment.
-4. Under **Environment Variables**, add:
-   - Key: `RAPIDAPI_KEY`
-   - Value: `your_actual_rapidapi_key`
-5. Click **Deploy**.
 
 ## Tech Stack
 - **Frontend:** React, Vite, Vanilla CSS
