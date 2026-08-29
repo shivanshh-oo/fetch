@@ -1,132 +1,173 @@
 import express from 'express';
-import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { detectPlatform } from '../services/extractor.js';
-import { createJob, getJob, createAudioJob } from '../services/jobQueue.js';
+import { createJob, getJob } from '../services/jobQueue.js';
 
 const execAsync = promisify(exec);
 const router = express.Router();
 
-router.post('/detect', (req, res) => {
-  res.json(detectPlatform((req.body || {}).url));
-});
+// ─── ffmpeg path ────────────────────────────────────────────────────────────
+const IS_WINDOWS = os.platform() === 'win32';
+const FFMPEG_PATH = IS_WINDOWS
+  ? 'C:\\Users\\Prompt\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.1-full_build\\bin\\ffmpeg.exe'
+  : 'ffmpeg';
 
+// ─── Routes ─────────────────────────────────────────────────────────────────
+
+// POST /api/v1/resolve  — start a resolution job
 router.post('/resolve', (req, res) => {
   const { url } = req.body || {};
   if (!url) return res.status(400).json({ error: 'URL is required' });
-  const detection = detectPlatform(url);
-  if (!detection.supported) return res.status(400).json({ error: detection.error });
-  res.json({ jobId: createJob(url), status: 'pending' });
+  if (!/^https?:\/\//i.test(url.trim())) {
+    return res.status(400).json({ error: 'Unsupported link — paste a valid video URL.' });
+  }
+  const jobId = createJob(url.trim());
+  res.json({ jobId, status: 'pending' });
 });
 
+// GET /api/v1/jobs/:jobId  — poll job status
 router.get('/jobs/:jobId', (req, res) => {
   const job = getJob(req.params.jobId);
   if (!job) return res.status(404).json({ error: 'Job not found' });
   res.json(job);
 });
 
-router.post('/jobs/:jobId/audio', (req, res) => {
-  const { format, quality } = req.body || {};
-  try { res.json(createAudioJob(req.params.jobId, format, quality)); }
-  catch (err) { res.status(400).json({ error: err.message }); }
-});
+// ─── Download Proxy ──────────────────────────────────────────────────────────
+// GET /api/v1/download/proxy
+// Downloads video (+ optionally audio) from CDN, merges with ffmpeg → streams mp4
+//
+// Query params:
+//   videoUrl  — CDN URL of the video stream (required)
+//   audioUrl  — CDN URL of the audio stream (optional, for merge)
+//   title     — filename (optional)
+//   audio     — "1" to download audio-only as mp3
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/download/proxy', async (req, res) => {
+  const { videoUrl, audioUrl, title = 'FETCH_video', audio = '0' } = req.query;
 
-const IS_WINDOWS = os.platform() === 'win32';
-const FFMPEG_PATH = IS_WINDOWS 
-  ? 'C:\\Users\\Prompt\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-9.0.1-full_build\\bin\\ffmpeg.exe'
-  : 'ffmpeg'; // On Linux/Docker, ffmpeg is installed in the global PATH
+  if (!videoUrl) return res.status(400).json({ error: 'videoUrl is required' });
 
-router.get('/download/file', async (req, res) => {
-  const { url, title = 'FETCH_video', audio = '0', height = '0' } = req.query;
-
-  if (!url) return res.status(400).json({ error: 'url query param required' });
-
-  const decodedUrl = decodeURIComponent(url);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fetchly_'));
-  const outFile = path.join(tmpDir, 'output.mp4');
-
-  const isAudio = audio === '1';
-  const maxHeight = parseInt(height, 10) || 0;
-
-  const ffmpegArg = IS_WINDOWS ? `--ffmpeg-location "${FFMPEG_PATH}" ` : '';
-
-  let cmd;
-  if (isAudio) {
-    const outAudio = path.join(tmpDir, 'output.mp3');
-    cmd = `yt-dlp ${ffmpegArg}-x --audio-format mp3 --audio-quality 0 --no-playlist --no-warnings -o "${outAudio}" "${decodedUrl}"`;
-  } else if (maxHeight > 0) {
-    cmd = `yt-dlp ${ffmpegArg}-f "bestvideo[height<=${maxHeight}]+bestaudio/bv*[height<=${maxHeight}]+ba/best" --merge-output-format mp4 --no-playlist --no-warnings -o "${outFile}" "${decodedUrl}"`;
-  } else {
-    cmd = `yt-dlp ${ffmpegArg}-f "bestvideo+bestaudio/bv*+ba/best" --merge-output-format mp4 --no-playlist --no-warnings -o "${outFile}" "${decodedUrl}"`;
-  }
+  const safeName = (title || 'FETCH').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
 
   try {
-    console.log(`[Download] Running yt-dlp for ${isAudio ? 'audio' : 'video'}...`);
-    const { stderr } = await execAsync(cmd, { timeout: 120000, maxBuffer: 5 * 1024 * 1024 });
+    const isAudio = audio === '1';
 
-    if (stderr) {
-      const errs = stderr.split('\n').filter(l => l.includes('ERROR'));
-      if (errs.length > 0) console.warn('[Download] yt-dlp stderr:', errs.join('\n'));
+    if (isAudio) {
+      // ── Audio-only: download audio stream, convert to mp3 ──────────────
+      const srcUrl = audioUrl || videoUrl;
+      const rawAudio = path.join(tmpDir, 'audio_raw');
+      const outMp3  = path.join(tmpDir, 'output.mp3');
+
+      console.log('[Proxy] Downloading audio stream...');
+      await downloadUrl(srcUrl, rawAudio);
+
+      console.log('[Proxy] Converting to mp3...');
+      const ffmpegQ = `"${FFMPEG_PATH}" -y -i "${rawAudio}" -vn -acodec libmp3lame -q:a 2 "${outMp3}"`;
+      await execAsync(ffmpegQ, { timeout: 120000 });
+
+      const stat = fs.statSync(outMp3);
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.mp3"`);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Length', stat.size);
+      fs.createReadStream(outMp3).pipe(res).on('finish', () => cleanup(tmpDir));
+
+    } else if (audioUrl) {
+      // ── Video + Audio: download both, merge into mp4 ───────────────────
+      const rawVideo = path.join(tmpDir, 'video_raw');
+      const rawAudio = path.join(tmpDir, 'audio_raw');
+      const outMp4   = path.join(tmpDir, 'output.mp4');
+
+      console.log('[Proxy] Downloading video + audio streams in parallel...');
+      await Promise.all([
+        downloadUrl(videoUrl, rawVideo),
+        downloadUrl(audioUrl, rawAudio),
+      ]);
+
+      console.log('[Proxy] Merging video + audio with ffmpeg...');
+      const ffmpegCmd = `"${FFMPEG_PATH}" -y -i "${rawVideo}" -i "${rawAudio}" -c:v copy -c:a aac -movflags +faststart "${outMp4}"`;
+      await execAsync(ffmpegCmd, { timeout: 180000 });
+
+      const stat = fs.statSync(outMp4);
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.mp4"`);
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Length', stat.size);
+      fs.createReadStream(outMp4).pipe(res).on('finish', () => cleanup(tmpDir));
+
+    } else {
+      // ── Video only (already combined stream): re-encode to mp4 ────────
+      const rawVideo = path.join(tmpDir, 'video_raw');
+      const outMp4   = path.join(tmpDir, 'output.mp4');
+
+      console.log('[Proxy] Downloading combined video stream...');
+      await downloadUrl(videoUrl, rawVideo);
+
+      console.log('[Proxy] Re-encoding to mp4 for compatibility...');
+      const ffmpegCmd = `"${FFMPEG_PATH}" -y -i "${rawVideo}" -c:v copy -c:a aac -movflags +faststart "${outMp4}"`;
+      await execAsync(ffmpegCmd, { timeout: 180000 });
+
+      const stat = fs.statSync(outMp4);
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}.mp4"`);
+      res.setHeader('Content-Type', 'video/mp4');
+      res.setHeader('Content-Length', stat.size);
+      fs.createReadStream(outMp4).pipe(res).on('finish', () => cleanup(tmpDir));
     }
 
-    const files = fs.readdirSync(tmpDir);
-    if (files.length === 0) throw new Error('yt-dlp produced no output file');
-
-    const outputFile = files
-      .map(f => ({ name: f, size: fs.statSync(path.join(tmpDir, f)).size }))
-      .filter(f => !f.name.endsWith('.part') && !f.name.endsWith('.ytdl'))
-      .sort((a, b) => b.size - a.size)[0];
-
-    if (!outputFile) throw new Error('No valid output file found in temp directory');
-
-    const filePath = path.join(tmpDir, outputFile.name);
-    const ext = path.extname(outputFile.name).replace('.', '') || (isAudio ? 'mp3' : 'mp4');
-    const safeName = (title || 'FETCH').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
-    const dlFilename = `${safeName}.${ext}`;
-
-    console.log(`[Download] Serving: ${dlFilename} (${(outputFile.size / 1048576).toFixed(1)} MB)`);
-
-    res.setHeader('Content-Disposition', `attachment; filename="${dlFilename}"`);
-    res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
-    res.setHeader('Content-Length', outputFile.size);
-
-    const readStream = fs.createReadStream(filePath);
-    readStream.pipe(res);
-
-    readStream.on('error', (err) => {
-      console.error('[Download] Stream error:', err.message);
-      if (!res.headersSent) res.status(500).json({ error: 'Streaming failed' });
-      cleanup(tmpDir);
-    });
-
-    res.on('finish', () => cleanup(tmpDir));
     res.on('close', () => cleanup(tmpDir));
 
   } catch (err) {
     cleanup(tmpDir);
-    console.error('[Download] Error:', err.message?.substring(0, 300));
+    console.error('[Proxy] Error:', err.message?.substring(0, 300));
     if (!res.headersSent) {
-      res.status(500).json({
-        error: err.message?.includes('Private') ? 'This video is private.' :
-               err.message?.includes('age') ? 'Age-restricted — sign-in required.' :
-               err.message?.includes('not available') ? 'Video not available in this region.' :
-               'Download failed. The URL may have expired — try fetching again.'
-      });
+      res.status(500).json({ error: 'Download failed: ' + (err.message?.substring(0, 100) || 'Unknown error') });
     }
   }
 });
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Download a URL to a local file path using Node's built-in fetch.
+ * Follows redirects automatically.
+ */
+async function downloadUrl(url, destPath) {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36',
+      'Referer': 'https://www.youtube.com/',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download stream: HTTP ${response.status} from CDN`);
+  }
+
+  const fileStream = fs.createWriteStream(destPath);
+  const reader = response.body.getReader();
+
+  await new Promise((resolve, reject) => {
+    function pump() {
+      reader.read().then(({ done, value }) => {
+        if (done) {
+          fileStream.end();
+          resolve();
+          return;
+        }
+        fileStream.write(Buffer.from(value), pump);
+      }).catch(reject);
+    }
+    pump();
+    fileStream.on('error', reject);
+  });
+}
 
 function cleanup(dir) {
   setTimeout(() => {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
   }, 5000);
 }
-
-router.get('/download/:fileId', (req, res) => {
-  res.status(410).json({ error: 'Use /api/v1/download/file?url=...&title=...' });
-});
 
 export default router;

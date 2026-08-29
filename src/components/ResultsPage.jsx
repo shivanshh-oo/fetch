@@ -17,59 +17,56 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
   const fallbackThumb = `https://picsum.photos/seed/${encodeURIComponent(title || jobId || 'fetch')}/800/450`;
   const sourceUrl = mediaData?._sourceUrl || '';
 
-  const triggerDownload = (href) => {
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = href;
-    document.body.appendChild(iframe);
-    
-    setTimeout(() => {
-      if (document.body.contains(iframe)) {
-        document.body.removeChild(iframe);
-      }
-    }, 120000);
-  };
-
   const handleDownloadVideo = () => {
-    if (!sourceUrl && !selectedVideo?.url) {
+    const dlUrl = selectedVideo?.url || '';
+    if (!dlUrl) {
       onTriggerToast('No download URL available.');
       return;
     }
 
     const safeName = (title || 'FETCH_video').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
-    const heightMatch = (selectedVideo?.quality || '').match(/(\d{3,4})p?/);
-    const height = heightMatch ? heightMatch[1] : '0';
+    const audioUrl = selectedVideo?.audioUrl || '';
 
     setDlState(s => ({ ...s, video: true }));
-    onTriggerToast(`Preparing ${selectedVideo?.quality || 'HD'} video — check notifications shortly…`);
+    onTriggerToast(`Preparing ${selectedVideo?.quality || 'HD'} video with audio — this may take a moment…`);
 
-    const href = `/api/v1/download/file?url=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(safeName)}&audio=0&height=${height}`;
+    // Route through our server proxy so ffmpeg can merge video + audio into a proper mp4
+    const params = new URLSearchParams({
+      videoUrl: dlUrl,
+      title: safeName,
+      audio: '0',
+    });
+    if (audioUrl) params.set('audioUrl', audioUrl);
 
-    triggerDownload(href);
+    const href = `/api/v1/download/proxy?${params.toString()}`;
+    window.location.href = href;   // triggers browser Save As dialog
 
-    setTimeout(() => setDlState(s => ({ ...s, video: false })), 5000);
+    setTimeout(() => setDlState(s => ({ ...s, video: false })), 8000);
   };
 
   const handleDownloadAudio = () => {
-    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
     const nativeAudio = audioStreams[0];
+    const audioSrc = nativeAudio?.url || selectedVideo?.audioUrl || '';
 
-    setDlState(s => ({ ...s, audio: true }));
-
-    if (nativeAudio?.url) {
-
-      onTriggerToast(`Downloading ${nativeAudio.extension?.toUpperCase() || 'MP3'} audio…`);
-      triggerDownload(nativeAudio.url);
-    } else if (sourceUrl) {
-
-      onTriggerToast('Extracting audio — check notifications shortly…');
-      const href = `/api/v1/download/file?url=${encodeURIComponent(sourceUrl)}&title=${encodeURIComponent(safeName)}&audio=1`;
-      triggerDownload(href);
-    } else {
+    if (!audioSrc) {
       onTriggerToast('No audio stream available for this media.');
+      return;
     }
 
-    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 5000);
+    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
+
+    setDlState(s => ({ ...s, audio: true }));
+    onTriggerToast('Extracting audio — converting to MP3…');
+
+    // Route through proxy to convert to proper mp3
+    const params = new URLSearchParams({
+      videoUrl: audioSrc,
+      title: safeName,
+      audio: '1',
+    });
+    window.location.href = `/api/v1/download/proxy?${params.toString()}`;
+
+    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 8000);
   };
 
   return (
