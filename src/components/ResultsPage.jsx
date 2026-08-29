@@ -60,6 +60,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
     onTriggerToast('Starting audio download…');
     browserDownload(audioSrc, safeName);
     setTimeout(() => setDlState(s => ({ ...s, audio: false })), 4000);
+  };
 
   return (
     <main className="page page-results" id="pageResults">
