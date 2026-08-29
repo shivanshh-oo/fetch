@@ -17,7 +17,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
   const fallbackThumb = `https://picsum.photos/seed/${encodeURIComponent(title || jobId || 'fetch')}/800/450`;
   const sourceUrl = mediaData?._sourceUrl || '';
 
-  // Download a CDN URL directly in the browser (for non-YouTube platforms)
+  // Browser-direct download using hidden anchor tag
   const browserDownload = (cdnUrl, filename) => {
     const a = document.createElement('a');
     a.href = cdnUrl;
@@ -33,55 +33,33 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
 
   const handleDownloadVideo = () => {
     const dlUrl = selectedVideo?.url || '';
-    if (!dlUrl && !sourceUrl) {
+    if (!dlUrl) {
       onTriggerToast('No download URL available.');
       return;
     }
 
     const safeName = (title || 'FETCH_video').replace(/[^\w\s-]/g, '').trim().substring(0, 60) + '.mp4';
-    // Extract numeric height from quality label e.g. "720p HD" → "720"
-    const qualityMatch = (selectedVideo?.quality || '').match(/(\d{3,4})/);
-    const quality = qualityMatch ? qualityMatch[1] : '720';
-
     setDlState(s => ({ ...s, video: true }));
-
-    if (isYouTube) {
-      // YouTube: route through our server → Cobalt API → merged mp4
-      onTriggerToast(`Fetching ${selectedVideo?.quality || 'HD'} YouTube video with audio\u2026`);
-      const params = new URLSearchParams({ url: sourceUrl, quality });
-      window.location.href = `/api/v1/download/youtube?${params.toString()}`;
-    } else {
-      // All other platforms: direct CDN URL (already has audio combined)
-      onTriggerToast(`Starting ${selectedVideo?.quality || 'HD'} video download\u2026`);
-      browserDownload(dlUrl, safeName);
-    }
-
-    setTimeout(() => setDlState(s => ({ ...s, video: false })), 5000);
+    onTriggerToast(`Starting ${selectedVideo?.quality || 'HD'} video download…`);
+    browserDownload(dlUrl, safeName);
+    setTimeout(() => setDlState(s => ({ ...s, video: false })), 4000);
   };
 
   const handleDownloadAudio = () => {
     const nativeAudio = audioStreams[0];
     const audioSrc = nativeAudio?.url || selectedVideo?.audioUrl || '';
-    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
 
-    setDlState(s => ({ ...s, audio: true }));
-
-    if (isYouTube) {
-      // YouTube: route through Cobalt for clean mp3
-      onTriggerToast('Extracting YouTube audio via Cobalt\u2026');
-      const params = new URLSearchParams({ url: sourceUrl, audio: '1' });
-      window.location.href = `/api/v1/download/youtube?${params.toString()}`;
-    } else if (audioSrc) {
-      // Other platforms: direct CDN audio URL
-      const ext = nativeAudio?.extension || 'mp3';
-      onTriggerToast('Starting audio download\u2026');
-      browserDownload(audioSrc, `${safeName}.${ext}`);
-    } else {
+    if (!audioSrc) {
       onTriggerToast('No audio stream available for this media.');
+      return;
     }
 
-    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 5000);
-  };
+    const ext = nativeAudio?.extension || 'mp3';
+    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60) + '.' + ext;
+    setDlState(s => ({ ...s, audio: true }));
+    onTriggerToast('Starting audio download…');
+    browserDownload(audioSrc, safeName);
+    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 4000);
 
   return (
     <main className="page page-results" id="pageResults">
@@ -135,6 +113,13 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
 
         <div className="dl-card">
           <div className="card-label yellow">Download Video</div>
+
+          {isYouTube && (
+            <div style={{ padding: '8px 10px', marginBottom: 8, background: '#FFF8E1', border: '1px solid #FFD54F', borderRadius: 6, fontSize: '0.72rem', color: '#7B6200', lineHeight: 1.4 }}>
+              <i className="fas fa-info-circle"></i>&nbsp;
+              <strong>YouTube note:</strong> Video stream may not include audio due to YouTube restrictions. Use <strong>Download Audio</strong> separately to get the audio track.
+            </div>
+          )}
 
           {videos.length > 0 ? (
             <div className="dl-options">
