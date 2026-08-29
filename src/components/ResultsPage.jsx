@@ -17,8 +17,7 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
   const fallbackThumb = `https://picsum.photos/seed/${encodeURIComponent(title || jobId || 'fetch')}/800/450`;
   const sourceUrl = mediaData?._sourceUrl || '';
 
-  // Download a CDN URL directly in the browser (no server proxy needed)
-  // The browser has the right headers/cookies; server-side fetch gets 403
+  // Download a CDN URL directly in the browser (for non-YouTube platforms)
   const browserDownload = (cdnUrl, filename) => {
     const a = document.createElement('a');
     a.href = cdnUrl;
@@ -30,41 +29,58 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
     setTimeout(() => document.body.removeChild(a), 1000);
   };
 
+  const isYouTube = platform?.key === 'youtube';
+
   const handleDownloadVideo = () => {
     const dlUrl = selectedVideo?.url || '';
-    if (!dlUrl) {
+    if (!dlUrl && !sourceUrl) {
       onTriggerToast('No download URL available.');
       return;
     }
 
     const safeName = (title || 'FETCH_video').replace(/[^\w\s-]/g, '').trim().substring(0, 60) + '.mp4';
+    // Extract numeric height from quality label e.g. "720p HD" → "720"
+    const qualityMatch = (selectedVideo?.quality || '').match(/(\d{3,4})/);
+    const quality = qualityMatch ? qualityMatch[1] : '720';
 
     setDlState(s => ({ ...s, video: true }));
-    onTriggerToast(`Starting ${selectedVideo?.quality || 'HD'} video download…`);
 
-    browserDownload(dlUrl, safeName);
+    if (isYouTube) {
+      // YouTube: route through our server → Cobalt API → merged mp4
+      onTriggerToast(`Fetching ${selectedVideo?.quality || 'HD'} YouTube video with audio\u2026`);
+      const params = new URLSearchParams({ url: sourceUrl, quality });
+      window.location.href = `/api/v1/download/youtube?${params.toString()}`;
+    } else {
+      // All other platforms: direct CDN URL (already has audio combined)
+      onTriggerToast(`Starting ${selectedVideo?.quality || 'HD'} video download\u2026`);
+      browserDownload(dlUrl, safeName);
+    }
 
-    setTimeout(() => setDlState(s => ({ ...s, video: false })), 4000);
+    setTimeout(() => setDlState(s => ({ ...s, video: false })), 5000);
   };
 
   const handleDownloadAudio = () => {
     const nativeAudio = audioStreams[0];
     const audioSrc = nativeAudio?.url || selectedVideo?.audioUrl || '';
-
-    if (!audioSrc) {
-      onTriggerToast('No audio stream available for this media.');
-      return;
-    }
-
-    const ext = nativeAudio?.extension || 'mp3';
-    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60) + '.' + ext;
+    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
 
     setDlState(s => ({ ...s, audio: true }));
-    onTriggerToast('Starting audio download…');
 
-    browserDownload(audioSrc, safeName);
+    if (isYouTube) {
+      // YouTube: route through Cobalt for clean mp3
+      onTriggerToast('Extracting YouTube audio via Cobalt\u2026');
+      const params = new URLSearchParams({ url: sourceUrl, audio: '1' });
+      window.location.href = `/api/v1/download/youtube?${params.toString()}`;
+    } else if (audioSrc) {
+      // Other platforms: direct CDN audio URL
+      const ext = nativeAudio?.extension || 'mp3';
+      onTriggerToast('Starting audio download\u2026');
+      browserDownload(audioSrc, `${safeName}.${ext}`);
+    } else {
+      onTriggerToast('No audio stream available for this media.');
+    }
 
-    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 4000);
+    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 5000);
   };
 
   return (

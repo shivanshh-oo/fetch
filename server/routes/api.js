@@ -5,6 +5,7 @@ import path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { createJob, getJob } from '../services/jobQueue.js';
+import { getCobaltDownloadUrl } from '../services/cobalt.js';
 
 const execAsync = promisify(exec);
 const router = express.Router();
@@ -35,7 +36,43 @@ router.get('/jobs/:jobId', (req, res) => {
   res.json(job);
 });
 
-// ─── Download Proxy ──────────────────────────────────────────────────────────
+// ─── YouTube Download via Cobalt ─────────────────────────────────────────────
+// GET /api/v1/download/youtube
+// Calls Cobalt API server-side → gets merged video+audio URL → redirects browser
+//
+// Query params:
+//   url     — original YouTube URL (required)
+//   quality — video quality e.g. "1080", "720", "480", "360" (default: "720")
+//   audio   — "1" for audio-only mp3 download
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/download/youtube', async (req, res) => {
+  const { url, quality = '720', audio = '0' } = req.query;
+
+  if (!url) return res.status(400).json({ error: 'url query param required' });
+
+  try {
+    const isAudio = audio === '1';
+    const mergedUrl = await getCobaltDownloadUrl(
+      decodeURIComponent(url),
+      quality,
+      isAudio
+    );
+
+    if (!mergedUrl) {
+      return res.status(500).json({ error: 'Cobalt did not return a download URL' });
+    }
+
+    console.log(`[YouTube] Redirecting to Cobalt URL: ${mergedUrl.substring(0, 80)}...`);
+    // Redirect the browser to cobalt's merged stream URL
+    res.redirect(302, mergedUrl);
+
+  } catch (err) {
+    console.error('[YouTube] Cobalt error:', err.message);
+    res.status(500).json({ error: 'YouTube download failed: ' + err.message.substring(0, 150) });
+  }
+});
+
+
 // GET /api/v1/download/proxy
 // Downloads video (+ optionally audio) from CDN, merges with ffmpeg → streams mp4
 //
