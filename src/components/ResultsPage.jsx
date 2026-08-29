@@ -17,6 +17,19 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
   const fallbackThumb = `https://picsum.photos/seed/${encodeURIComponent(title || jobId || 'fetch')}/800/450`;
   const sourceUrl = mediaData?._sourceUrl || '';
 
+  // Download a CDN URL directly in the browser (no server proxy needed)
+  // The browser has the right headers/cookies; server-side fetch gets 403
+  const browserDownload = (cdnUrl, filename) => {
+    const a = document.createElement('a');
+    a.href = cdnUrl;
+    a.download = filename;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => document.body.removeChild(a), 1000);
+  };
+
   const handleDownloadVideo = () => {
     const dlUrl = selectedVideo?.url || '';
     if (!dlUrl) {
@@ -24,24 +37,14 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
       return;
     }
 
-    const safeName = (title || 'FETCH_video').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
-    const audioUrl = selectedVideo?.audioUrl || '';
+    const safeName = (title || 'FETCH_video').replace(/[^\w\s-]/g, '').trim().substring(0, 60) + '.mp4';
 
     setDlState(s => ({ ...s, video: true }));
-    onTriggerToast(`Preparing ${selectedVideo?.quality || 'HD'} video with audio — this may take a moment…`);
+    onTriggerToast(`Starting ${selectedVideo?.quality || 'HD'} video download…`);
 
-    // Route through our server proxy so ffmpeg can merge video + audio into a proper mp4
-    const params = new URLSearchParams({
-      videoUrl: dlUrl,
-      title: safeName,
-      audio: '0',
-    });
-    if (audioUrl) params.set('audioUrl', audioUrl);
+    browserDownload(dlUrl, safeName);
 
-    const href = `/api/v1/download/proxy?${params.toString()}`;
-    window.location.href = href;   // triggers browser Save As dialog
-
-    setTimeout(() => setDlState(s => ({ ...s, video: false })), 8000);
+    setTimeout(() => setDlState(s => ({ ...s, video: false })), 4000);
   };
 
   const handleDownloadAudio = () => {
@@ -53,20 +56,15 @@ export default function ResultsPage({ jobId, mediaData, onBack, onTriggerToast }
       return;
     }
 
-    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60);
+    const ext = nativeAudio?.extension || 'mp3';
+    const safeName = (title || 'FETCH_audio').replace(/[^\w\s-]/g, '').trim().substring(0, 60) + '.' + ext;
 
     setDlState(s => ({ ...s, audio: true }));
-    onTriggerToast('Extracting audio — converting to MP3…');
+    onTriggerToast('Starting audio download…');
 
-    // Route through proxy to convert to proper mp3
-    const params = new URLSearchParams({
-      videoUrl: audioSrc,
-      title: safeName,
-      audio: '1',
-    });
-    window.location.href = `/api/v1/download/proxy?${params.toString()}`;
+    browserDownload(audioSrc, safeName);
 
-    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 8000);
+    setTimeout(() => setDlState(s => ({ ...s, audio: false })), 4000);
   };
 
   return (
